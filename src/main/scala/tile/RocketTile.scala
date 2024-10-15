@@ -7,6 +7,7 @@ import chisel3._
 
 import org.chipsalliance.cde.config._
 import org.chipsalliance.diplomacy.lazymodule._
+import freechips.rocketchip.util.TraceCoreParams
 
 import freechips.rocketchip.devices.tilelink.{BasicBusBlockerParams, BasicBusBlocker}
 import freechips.rocketchip.diplomacy.{
@@ -40,7 +41,8 @@ case class RocketTileParams(
     beuAddr: Option[BigInt] = None,
     blockerCtrlAddr: Option[BigInt] = None,
     clockSinkParams: ClockSinkParameters = ClockSinkParameters(),
-    boundaryBuffers: Option[RocketTileBoundaryBufferParams] = None
+    boundaryBuffers: Option[RocketTileBoundaryBufferParams] = None,
+    ltrace: Option[TraceCoreParams] = None
   ) extends InstantiableTileParams[RocketTile] {
   require(icache.isDefined)
   require(dcache.isDefined)
