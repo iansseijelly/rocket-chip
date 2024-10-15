@@ -146,6 +146,8 @@ trait HasRocketCoreIO extends HasRocketCoreParameters {
     val wfi = Output(Bool())
     val traceStall = Input(Bool())
     val vector = if (usingVector) Some(Flipped(new VectorCoreIO)) else None
+    val trace_core_ingress = Output(new TraceCoreInterface(new TraceCoreParams(nGroups = 1, iretireWidth = coreParams.retireWidth, 
+                                                                          xlen = coreParams.xLen, iaddrWidth = 32)))
   })
 }
 
@@ -301,6 +303,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val wb_reg_raw_inst = Reg(UInt())
   val wb_reg_wdata = Reg(Bits())
   val wb_reg_rs2 = Reg(Bits())
+  val wb_reg_br_taken = Reg(Bool())
   val take_pc_wb = Wire(Bool())
   val wb_reg_wphit           = Reg(Vec(nBreakpoints, Bool()))
 
@@ -721,9 +724,27 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     wb_reg_hfence_v := mem_ctrl.mem_cmd === M_HFENCEV
     wb_reg_hfence_g := mem_ctrl.mem_cmd === M_HFENCEG
     wb_reg_pc := mem_reg_pc
+    wb_reg_br_taken := mem_br_taken
     wb_reg_wphit := mem_reg_wphit | bpu.io.bpwatch.map { bpw => (bpw.rvalid(0) && mem_reg_load) || (bpw.wvalid(0) && mem_reg_store) }
     wb_reg_set_vconfig := mem_reg_set_vconfig
   }
+
+  val ingress_gen = Module(new TraceCoreIngressGen(new TraceCoreParams(nGroups = 1, iretireWidth = coreParams.retireWidth, 
+                                                                              xlen = coreParams.xLen, iaddrWidth = 32)))
+  ingress_gen.io.in.valid := wb_reg_valid
+  ingress_gen.io.in.taken := wb_reg_br_taken
+  ingress_gen.io.in.is_branch := wb_ctrl.branch
+  ingress_gen.io.in.is_jal := wb_ctrl.jal
+  ingress_gen.io.in.is_jalr := wb_ctrl.jalr
+  ingress_gen.io.in.insn := wb_reg_inst
+  ingress_gen.io.in.pc := wb_reg_pc
+  ingress_gen.io.in.is_compressed := !wb_reg_raw_inst(1, 0).andR // 2'b11 is uncompressed, everything else is compressed
+
+  io.trace_core_ingress.group(0) <> ingress_gen.io.out
+  io.trace_core_ingress.priv := csr.io.trace(0).priv // TODO: is there a better way?
+  io.trace_core_ingress.tval := csr.io.tval
+  io.trace_core_ingress.cause := csr.io.cause
+  io.trace_core_ingress.time := csr.io.time
 
   val (wb_xcpt, wb_cause) = checkExceptions(List(
     (wb_reg_xcpt,  wb_reg_cause),

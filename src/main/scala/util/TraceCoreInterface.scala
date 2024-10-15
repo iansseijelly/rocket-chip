@@ -44,5 +44,6 @@ class TraceCoreInterface (val params: TraceCoreParams) extends Bundle {
   val priv = UInt(4.W)
   val tval = UInt(params.xlen.W)
   val cause = UInt(params.xlen.W)
+  val time = UInt(params.xlen.W)
 }
 
