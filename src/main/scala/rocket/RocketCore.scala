@@ -131,6 +131,8 @@ class CoreInterrupts(val hasBeu: Boolean)(implicit p: Parameters) extends TileIn
 trait HasRocketCoreIO extends HasRocketCoreParameters {
   implicit val p: Parameters
   def nTotalRoCCCSRs: Int
+  def ingress_params = new TraceCoreParams(nGroups = 1, iretireWidth = coreParams.retireWidth, 
+                                              xlen = coreParams.xLen, iaddrWidth = coreParams.xLen) // TODO: check iaddrWidth
   val io = IO(new CoreBundle()(p) {
     val hartid = Input(UInt(hartIdLen.W))
     val reset_vector = Input(UInt(resetVectorLen.W))
@@ -146,8 +148,7 @@ trait HasRocketCoreIO extends HasRocketCoreParameters {
     val wfi = Output(Bool())
     val traceStall = Input(Bool())
     val vector = if (usingVector) Some(Flipped(new VectorCoreIO)) else None
-    val trace_core_ingress = Output(new TraceCoreInterface(new TraceCoreParams(nGroups = 1, iretireWidth = coreParams.retireWidth, 
-                                                                          xlen = coreParams.xLen, iaddrWidth = 32)))
+    val trace_core_ingress = Output(new TraceCoreInterface(ingress_params))
   })
 }
 
@@ -729,8 +730,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     wb_reg_set_vconfig := mem_reg_set_vconfig
   }
 
-  val ingress_gen = Module(new TraceCoreIngressGen(new TraceCoreParams(nGroups = 1, iretireWidth = coreParams.retireWidth, 
-                                                                              xlen = coreParams.xLen, iaddrWidth = 32)))
+  val ingress_gen = Module(new TraceCoreIngressGen(ingress_params))
   ingress_gen.io.in.valid := wb_reg_valid
   ingress_gen.io.in.taken := wb_reg_br_taken
   ingress_gen.io.in.is_branch := wb_ctrl.branch

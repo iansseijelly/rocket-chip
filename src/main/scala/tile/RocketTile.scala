@@ -25,7 +25,7 @@ import freechips.rocketchip.rocket.{
 }
 import freechips.rocketchip.subsystem.HierarchicalElementCrossingParamsLike
 import freechips.rocketchip.prci.{ClockSinkParameters, RationalCrossing, ClockCrossingType}
-import freechips.rocketchip.util.{Annotated, InOrderArbiter}
+import freechips.rocketchip.util.{Annotated, InOrderArbiter, TraceEncoder, TraceEncoderParams, TraceSinkPrint}
 
 import freechips.rocketchip.util.BooleanToAugmentedBoolean
 
@@ -154,6 +154,11 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   // reset vector is connected in the Frontend to s2_pc
   core.io.reset_vector := DontCare
+
+  val traceEncoder = Module(new TraceEncoder(new TraceEncoderParams(core.ingress_params, 16)))
+  core.io.trace_core_ingress <> traceEncoder.io.in
+  val traceSink = Module(new TraceSinkPrint())
+  traceEncoder.io.out <> traceSink.io.in
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
   outer.reportHalt(List(outer.dcache.module.io.errors))
