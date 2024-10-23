@@ -28,8 +28,8 @@ object TraceItype extends ChiselEnum {
 class TraceCoreParams (
   val nGroups: Int = 1,
   val iretireWidth: Int = 1,
-  val xlen: Int = 32,
-  val iaddrWidth: Int = 32
+  val xlen: Int = 64,
+  val iaddrWidth: Int = 64
 )
 
 class TraceCoreGroup (val params: TraceCoreParams) extends Bundle {

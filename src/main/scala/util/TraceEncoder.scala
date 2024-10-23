@@ -156,7 +156,7 @@ class TracePacketizer(val params: TraceEncoderParams) extends Module {
 
 class TraceEncoder(val params: TraceEncoderParams) extends Module {
   val io = IO(new Bundle {
-    val control = new TraceEncoderControlInterface()
+    val control = Input(new TraceEncoderControlInterface())
     val in = Input(new TraceCoreInterface(params.coreParams))
     val stall = Output(Bool())
     val out = Decoupled(UInt(8.W))
@@ -172,8 +172,8 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
   val prev_time = Reg(UInt(params.coreParams.xlen.W))
 
   // pipeline of ingress data
-  val ingress_0 = RegInit(Wire(new TraceCoreInterface(params.coreParams)))
-  val ingress_1 = RegInit(Wire(new TraceCoreInterface(params.coreParams)))
+  val ingress_0 = RegInit(0.U.asTypeOf(new TraceCoreInterface(params.coreParams)))
+  val ingress_1 = RegInit(0.U.asTypeOf(new TraceCoreInterface(params.coreParams)))
 
   // shift every cycle, if not stalled
   when (!stall) {
@@ -232,7 +232,15 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
 
   // stall if any buffer is full
   stall := !addr_buffer.io.enq.ready || !time_buffer.io.enq.ready || !byte_buffer.io.enq.ready
+  io.stall := stall
 
+  // default values
+  addr_encoder.io.input_value := 0.U
+  time_encoder.io.input_value := 0.U
+  is_compressed := false.B
+  packet_valid := false.B
+  full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FReserved)
+  comp_packet := 0.U
   // state machine
   switch (state) {
     is (sIdle) {
