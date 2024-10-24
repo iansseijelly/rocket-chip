@@ -25,14 +25,31 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int)(implicit p: Parameter
     val io = IO(new Bundle {
       val control = Output(new TraceEncoderControlInterface())
     })
-    val control_reg = RegInit(1.U(2.W))
-    val enable = control_reg(1)
-    val active = control_reg(0)
+
+    val control_reg_write_valid = Wire(Bool())
+    val control_reg_bits = RegInit(1.U(2.W))
+    val enable = control_reg_bits(1)
+    val active = control_reg_bits(0)
     io.control.enable := enable
+
+    def traceEncoderControlRegWrite(valid: Bool, bits: UInt): Bool = {
+      control_reg_write_valid := valid
+      when (control_reg_write_valid) {
+        control_reg_bits := bits
+        printf("Writing to trace encoder control reg: %x\n", control_reg_bits)
+      }
+      true.B
+    }
+
+    def traceEncoderControlRegRead(ready: Bool): (Bool, UInt) = {
+      (true.B, control_reg_bits)
+    }
+
     val regmap = node.regmap(
       Seq(
         0x00 -> Seq(
-          RegField(2, control_reg, RegFieldDesc("control", "Control trace encoder"))
+          RegField(2, traceEncoderControlRegRead(_), traceEncoderControlRegWrite(_, _),
+            RegFieldDesc("control", "Control trace encoder"))
         )
       ):_*
     )
