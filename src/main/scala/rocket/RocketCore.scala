@@ -730,22 +730,6 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     wb_reg_set_vconfig := mem_reg_set_vconfig
   }
 
-  val ingress_gen = Module(new TraceCoreIngressGen(ingress_params))
-  ingress_gen.io.in.valid := wb_reg_valid
-  ingress_gen.io.in.taken := wb_reg_br_taken
-  ingress_gen.io.in.is_branch := wb_ctrl.branch
-  ingress_gen.io.in.is_jal := wb_ctrl.jal
-  ingress_gen.io.in.is_jalr := wb_ctrl.jalr
-  ingress_gen.io.in.insn := wb_reg_inst
-  ingress_gen.io.in.pc := wb_reg_pc
-  ingress_gen.io.in.is_compressed := !wb_reg_raw_inst(1, 0).andR // 2'b11 is uncompressed, everything else is compressed
-
-  io.trace_core_ingress.group(0) <> ingress_gen.io.out
-  io.trace_core_ingress.priv := csr.io.trace(0).priv // TODO: is there a better way?
-  io.trace_core_ingress.tval := csr.io.tval
-  io.trace_core_ingress.cause := csr.io.cause
-  io.trace_core_ingress.time := csr.io.time
-
   val (wb_xcpt, wb_cause) = checkExceptions(List(
     (wb_reg_xcpt,  wb_reg_cause),
     (wb_reg_valid && wb_ctrl.mem && io.dmem.s2_xcpt.pf.st, Causes.store_page_fault.U),
@@ -843,6 +827,22 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
                  Mux(wb_ctrl.mul, mul.map(_.io.resp.bits.data).getOrElse(wb_reg_wdata),
                  wb_reg_wdata))))
   when (rf_wen) { rf.write(rf_waddr, rf_wdata) }
+
+  val ingress_gen = Module(new TraceCoreIngressGen(ingress_params))
+  ingress_gen.io.in.valid := wb_valid
+  ingress_gen.io.in.taken := wb_reg_br_taken
+  ingress_gen.io.in.is_branch := wb_ctrl.branch
+  ingress_gen.io.in.is_jal := wb_ctrl.jal
+  ingress_gen.io.in.is_jalr := wb_ctrl.jalr
+  ingress_gen.io.in.insn := wb_reg_inst
+  ingress_gen.io.in.pc := wb_reg_pc
+  ingress_gen.io.in.is_compressed := !wb_reg_raw_inst(1, 0).andR // 2'b11 is uncompressed, everything else is compressed
+
+  io.trace_core_ingress.group(0) <> ingress_gen.io.out
+  io.trace_core_ingress.priv := csr.io.trace(0).priv // TODO: is there a better way?
+  io.trace_core_ingress.tval := csr.io.tval
+  io.trace_core_ingress.cause := csr.io.cause
+  io.trace_core_ingress.time := csr.io.time
 
   // hook up control/status regfile
   csr.io.ungated_clock := clock

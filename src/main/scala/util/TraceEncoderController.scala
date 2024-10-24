@@ -25,12 +25,14 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int)(implicit p: Parameter
     val io = IO(new Bundle {
       val control = Output(new TraceEncoderControlInterface())
     })
-    val enable = RegInit(false.B)
+    val control_reg = RegInit(1.U(2.W))
+    val enable = control_reg(1)
+    val active = control_reg(0)
     io.control.enable := enable
     val regmap = node.regmap(
       Seq(
         0x00 -> Seq(
-          RegField.r(1, enable, RegFieldDesc("enable", "Enable trace encoder"))
+          RegField(2, control_reg, RegFieldDesc("control", "Control trace encoder"))
         )
       ):_*
     )

@@ -9,8 +9,20 @@ class TraceSinkPrint() extends Module {
   })
 
   io.in.ready := true.B
-  when (io.in.fire) {
-    // TODO: make this a direct binary dump
-    printf ("%x", io.in.bits)
-  }
+  val byte_printer = Module(new BytePrinter())
+  byte_printer.io.clk := clock
+  byte_printer.io.reset := reset
+  byte_printer.io.in_valid := io.in.valid
+  byte_printer.io.in_byte := io.in.bits
+}
+
+
+class BytePrinter() extends BlackBox  with HasBlackBoxResource {
+  val io = IO(new Bundle {
+    val clk = Input(Clock())
+    val reset = Input(Reset())
+    val in_valid = Input(Bool())
+    val in_byte = Input(UInt(8.W))
+  })
+  addResource("/vsrc/BytePrinter.v")
 }

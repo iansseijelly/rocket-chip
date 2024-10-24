@@ -20,7 +20,7 @@ object FullHeaderType extends ChiselEnum {
   val FTakenBranch    = Value(0x0.U) // 000
   val FNotTakenBranch = Value(0x1.U) // 001
   val FUninfJump      = Value(0x2.U) // 010
-  val FinfJump        = Value(0x3.U) // 011
+  val FInfJump        = Value(0x3.U) // 011
   val FTrap           = Value(0x4.U) // 100
   val FSync           = Value(0x5.U) // 101
   val FValue          = Value(0x6.U) // 110
@@ -108,7 +108,7 @@ class TracePacketizer(val params: TraceEncoderParams) extends Module {
         addr_index := 0.U
         time_num_bytes := io.metadata.bits(log2Ceil(timeMaxNumBytes), 1)
         time_index := 0.U
-        header_num_bytes := is_compressed
+        header_num_bytes := ~is_compressed
         header_index := 0.U
         state := Mux(is_compressed, pComp, pFull)
       }
@@ -132,12 +132,15 @@ class TracePacketizer(val params: TraceEncoderParams) extends Module {
       io.out.valid := true.B
       when (header_num_bytes > 0.U && header_index < header_num_bytes) {
         io.out.bits := io.byte.bits
+        io.out.valid := io.byte.valid
         header_index := header_index + io.out.fire
       } .elsewhen (addr_num_bytes > 0.U && addr_index < addr_num_bytes) {
         io.out.bits := io.addr.bits(addr_index)
+        io.out.valid := io.addr.valid
         addr_index := addr_index + io.out.fire
       } .elsewhen (time_num_bytes > 0.U && time_index < time_num_bytes) {
         io.out.bits := io.time.bits(time_index)
+        io.out.valid := io.time.valid
         time_index := time_index + io.out.fire
       } .otherwise {
         io.out.valid := false.B
@@ -176,7 +179,9 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
   val ingress_1 = RegInit(0.U.asTypeOf(new TraceCoreInterface(params.coreParams)))
 
   // shift every cycle, if not stalled
-  when (!stall) {
+  val pipeline_advance = Wire(Bool())
+  pipeline_advance := !stall && io.in.group(0).iretire === 1.U
+  when (pipeline_advance) {
     ingress_0 := io.in
     ingress_1 := ingress_0
   }
@@ -207,6 +212,8 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
   val packet_valid = Wire(Bool())
   val full_header   = Wire(UInt(8.W)) // full header
   val comp_packet   = Wire(UInt(8.W)) // compressed packet
+  val comp_header   = Wire(UInt(CompressedHeaderType.getWidth.W)) // compressed header
+  comp_packet := Cat(delta_time(5, 0), comp_header)
 
   // packetization of buffered message
   val trace_packetizer = Module(new TracePacketizer(params))
@@ -233,28 +240,35 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
   // stall if any buffer is full
   stall := !addr_buffer.io.enq.ready || !time_buffer.io.enq.ready || !byte_buffer.io.enq.ready
   io.stall := stall
-
+  
+  val sent = RegInit(false.B)
+  // reset takes priority over enqueue
+  when (pipeline_advance) {
+    sent := false.B
+  } .elsewhen (byte_buffer.io.enq.fire) {
+    sent := true.B
+  }
   // default values
   addr_encoder.io.input_value := 0.U
   time_encoder.io.input_value := 0.U
   is_compressed := false.B
   packet_valid := false.B
+  comp_header := CompressedHeaderType.CNA.asUInt
   full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FReserved)
-  comp_packet := 0.U
   // state machine
   switch (state) {
     is (sIdle) {
       when (io.control.enable) { state := sSync }
     }
     is (sSync) {
-      full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FTakenBranch)
+      full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FSync)
       time_encoder.io.input_value := ingress_1.time
       prev_time := ingress_1.time
       addr_encoder.io.input_value := ingress_1.group(0).iaddr >> 1.U // last bit is always 0
       is_compressed := false.B
-      packet_valid := true.B
+      packet_valid := !sent
       // state transition: wait for message to go in
-      state := Mux(!stall, sData, sSync)
+      state := Mux(!stall && packet_valid, sData, sSync)
     }
     is (sData) {
       switch (ingress_1.group(0).itype) {
@@ -262,28 +276,28 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
           packet_valid := false.B
         }
         is (TraceItype.ITBrTaken) {
-          full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FNotTakenBranch)
-          comp_packet := Cat(delta_time(5, 0), CompressedHeaderType.CTB.asUInt)
+          full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FTakenBranch)
+          comp_header := CompressedHeaderType.CTB.asUInt
           time_encoder.io.input_value := delta_time
           prev_time := ingress_1.time
           is_compressed := delta_time <= MAX_DELTA_TIME_COMP.U
-          packet_valid := true.B
+          packet_valid := !sent
         }
         is (TraceItype.ITBrNTaken) {
           full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FNotTakenBranch)
-          comp_packet := Cat(delta_time(5, 0), CompressedHeaderType.CNT.asUInt)
+          comp_header := CompressedHeaderType.CNT.asUInt
           time_encoder.io.input_value := delta_time
           prev_time := ingress_1.time
           is_compressed := delta_time <= MAX_DELTA_TIME_COMP.U
-          packet_valid := true.B
+          packet_valid := !sent
         }
         is (TraceItype.ITInJump) {
-          full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FUninfJump)
-          comp_packet := Cat(delta_time(5, 0), CompressedHeaderType.CIJ.asUInt)
+          full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FInfJump)
+          comp_header := CompressedHeaderType.CIJ.asUInt
           time_encoder.io.input_value := delta_time
           prev_time := ingress_1.time
           is_compressed := delta_time <= MAX_DELTA_TIME_COMP.U
-          packet_valid := true.B
+          packet_valid := !sent
         }
         is (TraceItype.ITUnJump) {
           full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FUninfJump)
@@ -291,7 +305,7 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
           prev_time := ingress_1.time
           addr_encoder.io.input_value := (ingress_1.group(0).iaddr ^ ingress_0.group(0).iaddr) >> 1.U
           is_compressed := false.B
-          packet_valid := true.B
+          packet_valid := !sent
         }
       }
     }
