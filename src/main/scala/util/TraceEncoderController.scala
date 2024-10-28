@@ -36,7 +36,8 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int)(implicit p: Parameter
       control_reg_write_valid := valid
       when (control_reg_write_valid) {
         control_reg_bits := bits
-        printf("Writing to trace encoder control reg: %x\n", control_reg_bits)
+        printf("Writing to trace encoder control reg from %x to %x\n",
+         control_reg_bits, bits)
       }
       true.B
     }

@@ -273,13 +273,13 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
     }
     is (sSync) {
       full_header := FullHeaderType.encoderFullHeader(FullHeaderType.FSync)
-      time_encoder.io.input_value := ingress_1.time
-      prev_time := ingress_1.time
-      addr_encoder.io.input_value := ingress_1.group(0).iaddr >> 1.U // last bit is always 0
+      time_encoder.io.input_value := ingress_0.time
+      prev_time := ingress_0.time
+      addr_encoder.io.input_value := ingress_0.group(0).iaddr >> 1.U // last bit is always 0
       is_compressed := false.B
       packet_valid := !sent
       // state transition: wait for message to go in
-      state := Mux(!stall && packet_valid, Mux(io.control.enable, sData, sIdle), sSync)
+      state := Mux(pipeline_advance && packet_valid, Mux(io.control.enable, sData, sIdle), sSync)
     }
     is (sData) {
       when (!io.control.enable) {
