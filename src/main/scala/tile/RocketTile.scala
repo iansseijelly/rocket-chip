@@ -46,7 +46,7 @@ case class RocketTileParams(
     blockerCtrlAddr: Option[BigInt] = None,
     clockSinkParams: ClockSinkParameters = ClockSinkParameters(),
     boundaryBuffers: Option[RocketTileBoundaryBufferParams] = None,
-    ltrace: Option[TraceCoreParams] = Some(new TraceCoreParams())
+    ltrace: Option[TraceEncoderParams] = None
   ) extends InstantiableTileParams[RocketTile] {
   require(icache.isDefined)
   require(dcache.isDefined)
@@ -90,7 +90,7 @@ class RocketTile private(
   }
 
   val trace_encoder_controller = rocketParams.ltrace.map { t =>
-    val trace_encoder_controller = LazyModule(new TraceEncoderController(0x10000000, xBytes))
+    val trace_encoder_controller = LazyModule(new TraceEncoderController(t.encoderBaseAddr, xBytes))
     connectTLSlave(trace_encoder_controller.node, xBytes)
     trace_encoder_controller
   }
@@ -165,7 +165,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   // reset vector is connected in the Frontend to s2_pc
   core.io.reset_vector := DontCare
 
-  val trace_encoder = Module(new TraceEncoder(new TraceEncoderParams(core.ingress_params, 16)))
+  val trace_encoder = Module(new TraceEncoder(outer.rocketParams.ltrace.get))
   core.io.trace_core_ingress <> trace_encoder.io.in
   outer.trace_encoder_controller.foreach { lm =>
     trace_encoder.io.control <> lm.module.io.control

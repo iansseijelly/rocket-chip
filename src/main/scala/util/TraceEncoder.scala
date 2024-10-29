@@ -9,7 +9,8 @@ import scala.math.min
 
 class TraceEncoderParams(
   val coreParams: TraceCoreParams,
-  val bufferDepth: Int
+  val bufferDepth: Int,
+  val encoderBaseAddr: BigInt
 )
 
 class TraceEncoderControlInterface() extends Bundle {
