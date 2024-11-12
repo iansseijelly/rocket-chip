@@ -829,7 +829,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   when (rf_wen) { rf.write(rf_waddr, rf_wdata) }
 
   val ingress_gen = Module(new TraceCoreIngressGen(ingress_params))
-  ingress_gen.io.in.valid := wb_valid
+  ingress_gen.io.in.valid := wb_valid || wb_xcpt
   ingress_gen.io.in.taken := wb_reg_br_taken
   ingress_gen.io.in.is_branch := wb_ctrl.branch
   ingress_gen.io.in.is_jal := wb_ctrl.jal
@@ -837,6 +837,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   ingress_gen.io.in.insn := wb_reg_inst
   ingress_gen.io.in.pc := wb_reg_pc
   ingress_gen.io.in.is_compressed := !wb_reg_raw_inst(1, 0).andR // 2'b11 is uncompressed, everything else is compressed
+  ingress_gen.io.in.interrupt := csr.io.trace(0).interrupt && csr.io.trace(0).exception
+  ingress_gen.io.in.exception := !csr.io.trace(0).interrupt && csr.io.trace(0).exception
+  ingress_gen.io.in.trap_return := csr.io.trap_return
 
   io.trace_core_ingress.group(0) <> ingress_gen.io.out
   io.trace_core_ingress.priv := csr.io.trace(0).priv // TODO: is there a better way?

@@ -16,13 +16,22 @@ class TraceCoreIngressGen(val params: TraceCoreParams) extends Module {
             val is_compressed = Input(Bool())
             val insn = Input(UInt(params.xlen.W))
             val pc = Input(UInt(params.xlen.W))
+            val interrupt = Input(Bool())
+            val exception = Input(Bool())
+            val trap_return = Input(Bool())
         }
         val out = Output(new TraceCoreGroup(params))
     })
 
     def gen_itype(insn: UInt, taken: Bool, is_branch: Bool, is_jal: Bool, is_jalr: Bool) = {
         val itype = Wire(TraceItype())
-        when (is_branch && taken) {
+        when (io.in.exception) {
+            itype := TraceItype.ITException
+        }.elsewhen (io.in.interrupt) {
+            itype := TraceItype.ITInterrupt
+        }.elsewhen (io.in.trap_return) {
+            itype := TraceItype.ITReturn
+        }.elsewhen (is_branch && taken) {
             itype := TraceItype.ITBrTaken
         }.elsewhen (is_branch && !taken) {
             itype := TraceItype.ITBrNTaken
