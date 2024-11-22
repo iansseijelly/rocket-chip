@@ -165,13 +165,15 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   // reset vector is connected in the Frontend to s2_pc
   core.io.reset_vector := DontCare
 
-  val trace_encoder = Module(new TraceEncoder(outer.rocketParams.ltrace.get))
-  core.io.trace_core_ingress <> trace_encoder.io.in
-  outer.trace_encoder_controller.foreach { lm =>
-    trace_encoder.io.control <> lm.module.io.control
+  if (outer.rocketParams.ltrace.isDefined) {
+    val trace_encoder = Module(new TraceEncoder(outer.rocketParams.ltrace.get))
+    core.io.trace_core_ingress <> trace_encoder.io.in
+    outer.trace_encoder_controller.foreach { lm =>
+      trace_encoder.io.control <> lm.module.io.control
+    }
+    val traceSink = Module(new TraceSinkPrint())
+    trace_encoder.io.out <> traceSink.io.in
   }
-  val traceSink = Module(new TraceSinkPrint())
-  trace_encoder.io.out <> traceSink.io.in
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
   outer.reportHalt(List(outer.dcache.module.io.errors))

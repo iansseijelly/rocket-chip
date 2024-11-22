@@ -31,6 +31,7 @@ case class RocketCoreParams(
   useZbs: Boolean = false,
   nLocalInterrupts: Int = 0,
   useNMI: Boolean = false,
+  nLBR: Int = 0,
   nBreakpoints: Int = 1,
   useBPWatch: Boolean = false,
   mcontextWidth: Int = 0,
@@ -151,7 +152,6 @@ trait HasRocketCoreIO extends HasRocketCoreParameters {
     val trace_core_ingress = Output(new TraceCoreInterface(ingress_params))
   })
 }
-
 
 class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     with HasRocketCoreParameters
@@ -342,7 +342,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ctrl_killd = Wire(Bool())
   val id_npc = (ibuf.io.pc.asSInt + ImmGen(IMM_UJ, id_inst(0))).asUInt
 
-  val csr = Module(new CSRFile(perfEvents, coreParams.customCSRs.decls, tile.roccCSRs.flatten, tile.rocketParams.beuAddr.isDefined))
+  assert(rocketParams.nLBR <= 8, "Max supported LBR size is 8")
+  val csr = Module(new CSRFile(perfEvents, coreParams.customCSRs.decls, tile.roccCSRs.flatten, rocketParams.nLBR, tile.rocketParams.beuAddr.isDefined))
   val id_csr_en = id_ctrl.csr.isOneOf(CSR.S, CSR.C, CSR.W)
   val id_system_insn = id_ctrl.csr === CSR.I
   val id_csr_ren = id_ctrl.csr.isOneOf(CSR.S, CSR.C) && id_expanded_inst(0).rs1 === 0.U
@@ -865,6 +866,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.hartid := io.hartid
   csr.io.rocc_interrupt := io.rocc.interrupt
   csr.io.pc := wb_reg_pc
+  csr.io.pc_discontinue := (wb_ctrl.branch && wb_reg_br_taken) || wb_ctrl.jal || wb_ctrl.jalr
 
   val tval_dmem_addr = !wb_reg_xcpt
   val tval_any_addr = tval_dmem_addr ||

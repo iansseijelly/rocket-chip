@@ -286,6 +286,7 @@ class CSRFileIO(hasBeu: Boolean)(implicit p: Parameters) extends CoreBundle
   val retire = Input(UInt(log2Up(1+retireWidth).W))
   val cause = Input(UInt(xLen.W))
   val pc = Input(UInt(vaddrBitsExtended.W))
+  val pc_discontinue = Input(Bool())
   val tval = Input(UInt(vaddrBitsExtended.W))
   val htval = Input(UInt(((maxSVAddrBits + 1) min xLen).W))
   val mhtinst_read_pseudo = Input(Bool())
@@ -379,6 +380,7 @@ class CSRFile(
   perfEventSets: EventSets = new EventSets(Seq()),
   customCSRs: Seq[CustomCSR] = Nil,
   roccCSRs: Seq[CustomCSR] = Nil,
+  nLBR: Int = 0,
   hasBeu: Boolean = false)(implicit p: Parameters)
     extends CoreModule()(p)
     with HasCoreParameters {
@@ -805,6 +807,18 @@ class CSRFile(
   }
   val reg_custom = customCSRs.zip(io.customCSRs).map(t => generateCustomCSR(t._1, t._2))
   val reg_rocc = roccCSRs.zip(io.roccCSRs).map(t => generateCustomCSR(t._1, t._2))
+
+  val reg_lbr_ctrl = RegInit(0.U(4.W))
+  val reg_lbr_num = RegInit(nLBR.U(xLen.W))
+  val reg_lbr_srcs = RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))
+  val reg_lbr_dsts = RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))
+  // append to read_mapping
+  read_mapping += CSRs.lbrctrl -> reg_lbr_ctrl
+  read_mapping += CSRs.lbrnum -> reg_lbr_num
+  (reg_lbr_srcs zip reg_lbr_dsts).zipWithIndex.foreach { case ((src, dst), i) =>
+    read_mapping += CSRs.lbrsrc0 + i -> src
+    read_mapping += CSRs.lbrdst0 + i -> dst
+  }
 
   if (usingHypervisor) {
     read_mapping += CSRs.mtinst -> read_mtinst
@@ -1515,6 +1529,9 @@ class CSRFile(
     for ((io, csr, reg) <- (io.roccCSRs, roccCSRs, reg_rocc).zipped) {
       writeCustomCSR(io, csr, reg)
     }
+
+    when (decoded_addr(CSRs.lbrctrl)) { reg_lbr_ctrl := wdata & 0xF.U }
+
     if (usingVector) {
       when (decoded_addr(CSRs.vstart)) { set_vs_dirty := true.B; reg_vstart.get := wdata }
       when (decoded_addr(CSRs.vxrm))   { set_vs_dirty := true.B; reg_vxrm.get := wdata }
@@ -1628,6 +1645,25 @@ class CSRFile(
     t.interrupt := cause(xLen-1)
     t.tval := io.tval
     t.wdata.foreach(_ := DontCare)
+  }
+
+  val reg_lbr_scratch = RegInit(0.U(xLen.W))
+  val lbr_armed = RegInit(false.B)
+  when (lbr_armed && io.retire.asBool && reg_lbr_ctrl(0)) {
+    // shift-register to update the LBR
+    reg_lbr_srcs(0) := reg_lbr_scratch
+    for (i <- 1 until nLBR) {
+      reg_lbr_srcs(i) := reg_lbr_srcs(i-1)
+    }
+    reg_lbr_dsts(0) := io.pc
+    for (i <- 1 until nLBR) {
+      reg_lbr_dsts(i) := reg_lbr_dsts(i-1)
+    }
+    lbr_armed := false.B
+  }
+  when (io.pc_discontinue && io.retire.asBool && reg_lbr_ctrl(0)) {
+    reg_lbr_scratch := io.pc
+    lbr_armed := true.B
   }
 
   def chooseInterrupt(masksIn: Seq[UInt]): (Bool, UInt) = {
