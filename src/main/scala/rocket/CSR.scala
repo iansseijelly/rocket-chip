@@ -1649,7 +1649,7 @@ class CSRFile(
 
   val reg_lbr_scratch = RegInit(0.U(xLen.W))
   val lbr_armed = RegInit(false.B)
-  when (lbr_armed && io.retire.asBool && reg_lbr_ctrl(0)) {
+  when (lbr_armed && io.retire.asBool && reg_lbr_ctrl(1,0).andR) {
     // shift-register to update the LBR
     reg_lbr_srcs(0) := reg_lbr_scratch
     for (i <- 1 until nLBR) {
@@ -1661,7 +1661,7 @@ class CSRFile(
     }
     lbr_armed := false.B
   }
-  when (io.pc_discontinue && io.retire.asBool && reg_lbr_ctrl(0)) {
+  when (io.pc_discontinue && io.retire.asBool && reg_lbr_ctrl(1,0).andR) {
     reg_lbr_scratch := io.pc
     lbr_armed := true.B
   }
