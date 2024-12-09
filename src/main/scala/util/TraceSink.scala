@@ -86,12 +86,6 @@ class TraceSinkDMA(addr: BigInt, beatBytes: Int)(implicit p: Parameters) extends
     val mask = (1.U << collect_counter) - 1.U
     // putting the buffer data on the TL mem lane
 
-    val acquire_req = edge.AcquirePerm(
-      fromSource = 0.U,
-      toAddress = addr_counter + dma_start_addr,
-      lgSize = log2Ceil(busWidth / 8).U,
-      growPermissions = TLPermissions.toT)
-
     val put_req = edge.Put(
       fromSource = 0.U,
       toAddress = addr_counter + dma_start_addr,
@@ -103,15 +97,15 @@ class TraceSinkDMA(addr: BigInt, beatBytes: Int)(implicit p: Parameters) extends
 
     switch(mstate) {
       is (mIdle) {
-        fifo.io.deq.ready := true.B
-        mstate := Mux(fifo.io.deq.fire, mCollect, mIdle)
+        fifo.io.deq.ready := false.B
+        mstate := Mux(fifo.io.deq.valid, mCollect, mIdle)
         collect_counter := 0.U
       }
       is (mCollect) {
         // either we have collected enough data or that's all the messages for now
         mstate := Mux(collect_advance, mWrite, mCollect)
-        collect_counter := collect_counter + fifo.io.deq.fire.asUInt
-        msg_buffer(collect_counter) := fifo.io.deq.bits
+        collect_counter := Mux(fifo.io.deq.fire, collect_counter + 1.U, collect_counter)
+        msg_buffer(collect_counter) := Mux(fifo.io.deq.fire, fifo.io.deq.bits, msg_buffer(collect_counter))
         fifo.io.deq.ready := collect_counter < (busWidth / 8).U
       }
       // potentially, optimize this by pipelining collect and write
