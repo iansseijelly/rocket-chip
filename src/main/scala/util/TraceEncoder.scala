@@ -10,12 +10,11 @@ import scala.math.min
 class TraceEncoderParams(
   val coreParams: TraceCoreParams,
   val bufferDepth: Int,
-  val encoderBaseAddr: BigInt
+  val encoderBaseAddr: BigInt,
+  val sinkDMABaseAddr: BigInt,
+  val useSinkPrint: Boolean,
+  val useSinkDMA: Boolean
 )
-
-class TraceEncoderControlInterface() extends Bundle {
-  val enable = Bool()
-}
 
 object FullHeaderType extends ChiselEnum {
   val FTakenBranch    = Value(0x0.U) // 000
@@ -26,8 +25,6 @@ object FullHeaderType extends ChiselEnum {
   val FSync           = Value(0x5.U) // 101
   val FValue          = Value(0x6.U) // 110
   val FReserved       = Value(0x7.U) // 111
-
-
 }
 
 object CompressedHeaderType extends ChiselEnum {
@@ -35,6 +32,11 @@ object CompressedHeaderType extends ChiselEnum {
   val CNT = Value(0x1.U) // 01, not taken branch
   val CNA = Value(0x2.U) // 10, not a compressed packet
   val CIJ = Value(0x3.U) // 11, is a jump
+}
+
+object TraceSinkTarget extends ChiselEnum {
+  val STPrint = Value(0x0.U) // 00, RTL print
+  val STDMA = Value(0x1.U) // 01, DMA
 }
 
 object TrapType extends ChiselEnum {

@@ -20,6 +20,8 @@ import freechips.rocketchip.subsystem.{
 import freechips.rocketchip.tilelink.{TLEphemeralNode, TLOutwardNode, TLNode, TLFragmenter, EarlyAck, TLWidthWidget, TLManagerParameters, ManagerUnification}
 import freechips.rocketchip.prci.{ClockCrossingType, ClockSinkParameters}
 import freechips.rocketchip.util.{TraceCoreParams, TraceCoreInterface}
+import freechips.rocketchip.util.{TraceSinkPrint, TraceSinkDMA}
+import freechips.rocketchip.tilelink.TLIdentityNode
 
 import freechips.rocketchip.resources.{BigIntToProperty, IntToProperty, StringToProperty}
 import freechips.rocketchip.util.BooleanToAugmentedBoolean
@@ -299,6 +301,8 @@ abstract class BaseTile private (crossing: ClockCrossingType, q: Parameters)
   val traceCoreSourceNode = BundleBridgeSource(() => new TraceCoreInterface(traceCoreParams))
   /** Node for external consumers to source  a V1.0 instruction trace from the core. */
   val traceCoreNode = traceCoreSourceNode
+
+  val traceSinkIdentityNode = TLIdentityNode()
 
   /** Node to broadcast collected trace sideband signals into the tile. */
   val traceAuxNexusNode = BundleBridgeNexus[TraceAux](default = Some(() => {
