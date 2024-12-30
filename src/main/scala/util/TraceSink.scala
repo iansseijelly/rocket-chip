@@ -28,7 +28,7 @@ class TraceSinkPrint()(implicit p: Parameters) extends LazyModule {
   }
 }
 
-class BytePrinter() extends BlackBox  with HasBlackBoxResource {
+class BytePrinter() extends BlackBox with HasBlackBoxResource {
   val io = IO(new Bundle {
     val clk = Input(Clock())
     val reset = Input(Reset())

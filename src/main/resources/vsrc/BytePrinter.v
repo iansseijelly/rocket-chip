@@ -5,6 +5,8 @@ module BytePrinter(
     input[7:0] in_byte
 );
 
+`ifdef VCS
+
 integer file;
 
 initial begin
@@ -24,5 +26,7 @@ end
 final begin
     $fclose(file);
 end
+
+`endif
 
 endmodule
