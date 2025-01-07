@@ -1,4 +1,8 @@
-module BytePrinter(
+module BytePrinter
+#(
+    parameter FILE_NAME = "byte_printer.txt"
+)
+(
     input clk,
     input reset,
     input in_valid,
@@ -10,7 +14,7 @@ module BytePrinter(
 integer file;
 
 initial begin
-    file = $fopen("byte_printer.txt", "w");
+    file = $fopen(FILE_NAME, "w");
     if (file == 0) begin
         $display("Failed to open byte_printer.txt");
         $finish;
