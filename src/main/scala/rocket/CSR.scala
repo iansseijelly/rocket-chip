@@ -807,17 +807,19 @@ class CSRFile(
   }
   val reg_custom = customCSRs.zip(io.customCSRs).map(t => generateCustomCSR(t._1, t._2))
   val reg_rocc = roccCSRs.zip(io.roccCSRs).map(t => generateCustomCSR(t._1, t._2))
-
-  val reg_lbr_ctrl = RegInit(0.U(4.W))
-  val reg_lbr_num = RegInit(nLBR.U(xLen.W))
-  val reg_lbr_srcs = RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))
-  val reg_lbr_dsts = RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))
+  
+  val reg_lbr_ctrl = if (nLBR > 0) Some(RegInit(0.U(4.W))) else None
+  val reg_lbr_num = if (nLBR > 0) Some(RegInit(nLBR.U(xLen.W))) else None
+  val reg_lbr_srcs = if (nLBR > 0) Some(RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))) else None
+  val reg_lbr_dsts = if (nLBR > 0) Some(RegInit(VecInit(Seq.fill(nLBR)(0.U(xLen.W))))) else None
   // append to read_mapping
-  read_mapping += CSRs.lbrctrl -> reg_lbr_ctrl
-  read_mapping += CSRs.lbrnum -> reg_lbr_num
-  (reg_lbr_srcs zip reg_lbr_dsts).zipWithIndex.foreach { case ((src, dst), i) =>
-    read_mapping += CSRs.lbrsrc0 + i -> src
-    read_mapping += CSRs.lbrdst0 + i -> dst
+  if (nLBR > 0) {
+    read_mapping += CSRs.lbrctrl -> reg_lbr_ctrl.get
+    read_mapping += CSRs.lbrnum -> reg_lbr_num.get
+    (reg_lbr_srcs.get zip reg_lbr_dsts.get).zipWithIndex.foreach { case ((src, dst), i) =>
+      read_mapping += CSRs.lbrsrc0 + i -> src
+      read_mapping += CSRs.lbrdst0 + i -> dst
+    }
   }
 
   if (usingHypervisor) {
@@ -1529,8 +1531,9 @@ class CSRFile(
     for ((io, csr, reg) <- (io.roccCSRs, roccCSRs, reg_rocc).zipped) {
       writeCustomCSR(io, csr, reg)
     }
-
-    when (decoded_addr(CSRs.lbrctrl)) { reg_lbr_ctrl := wdata & 0xF.U }
+    if (nLBR > 0) {
+      when (decoded_addr(CSRs.lbrctrl)) { reg_lbr_ctrl.get := wdata & 0xF.U }
+    }
 
     if (usingVector) {
       when (decoded_addr(CSRs.vstart)) { set_vs_dirty := true.B; reg_vstart.get := wdata }
@@ -1647,23 +1650,25 @@ class CSRFile(
     t.wdata.foreach(_ := DontCare)
   }
 
-  val reg_lbr_scratch = RegInit(0.U(xLen.W))
-  val lbr_armed = RegInit(false.B)
-  when (lbr_armed && io.retire.asBool && reg_lbr_ctrl(1,0).andR) {
-    // shift-register to update the LBR
-    reg_lbr_srcs(0) := reg_lbr_scratch
-    for (i <- 1 until nLBR) {
-      reg_lbr_srcs(i) := reg_lbr_srcs(i-1)
+  if (nLBR > 0) {
+    val reg_lbr_scratch = RegInit(0.U(xLen.W))
+    val lbr_armed = RegInit(false.B)
+    when (lbr_armed && io.retire.asBool && reg_lbr_ctrl.get(1,0).andR) {
+      // shift-register to update the LBR
+      reg_lbr_srcs.get.apply(0) := reg_lbr_scratch
+      for (i <- 1 until nLBR) {
+        reg_lbr_srcs.get.apply(i) := reg_lbr_srcs.get.apply(i-1)
+      }
+      reg_lbr_dsts.get.apply(0) := io.pc
+      for (i <- 1 until nLBR) {
+        reg_lbr_dsts.get.apply(i) := reg_lbr_dsts.get.apply(i-1)
+      }
+      lbr_armed := false.B
     }
-    reg_lbr_dsts(0) := io.pc
-    for (i <- 1 until nLBR) {
-      reg_lbr_dsts(i) := reg_lbr_dsts(i-1)
+    when (io.pc_discontinue && io.retire.asBool && reg_lbr_ctrl.get.apply(1,0).andR) {
+      reg_lbr_scratch := io.pc
+      lbr_armed := true.B
     }
-    lbr_armed := false.B
-  }
-  when (io.pc_discontinue && io.retire.asBool && reg_lbr_ctrl(1,0).andR) {
-    reg_lbr_scratch := io.pc
-    lbr_armed := true.B
   }
 
   def chooseInterrupt(masksIn: Seq[UInt]): (Bool, UInt) = {

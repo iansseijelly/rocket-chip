@@ -96,7 +96,10 @@ class RocketTile private(
     trace_encoder_controller
   }
 
-  val trace_sink_print = LazyModule(new TraceSinkPrint(rocketParams.uniqueName))
+  val trace_sink_print = rocketParams.ltrace.map { t =>
+    LazyModule(new TraceSinkPrint(rocketParams.uniqueName))
+  }
+
   val trace_sink_dma = rocketParams.ltrace.map { t =>
     val trace_sink_dma = LazyModule(new TraceSinkDMA(t.sinkDMABaseAddr, xBytes))
     connectTLSlave(trace_sink_dma.regnode, xBytes)
@@ -184,7 +187,9 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     val trace_sink_arbiter = Module(new TraceSinkArbiter(2))
     trace_sink_arbiter.io.target := trace_encoder.io.control.target
     trace_sink_arbiter.io.in <> trace_encoder.io.out 
-    outer.trace_sink_print.module.io.in <> trace_sink_arbiter.io.out(0)
+    outer.trace_sink_print.foreach { lm =>
+      lm.module.io.in <> trace_sink_arbiter.io.out(0)
+    }
     outer.trace_sink_dma.foreach { lm =>
       lm.module.io.in <> trace_sink_arbiter.io.out(1)
     }
