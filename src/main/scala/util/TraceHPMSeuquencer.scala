@@ -54,11 +54,11 @@ class SerialVarLenEncoder(val maxWidth: Int) extends Module {
     }
     is (sBusy) {
       i := i + io.out.fire.asUInt
-      val len = Mux(i*8.U + 7.U < maxWidth.U, 7.U, maxWidth.U - 1.U - i*8.U)
-      val lsi = i*8.U
-      val mask = (1.U << len) - 1.U
-      io.out.bits := ((io.in.bits & mask) >> lsi) | Mux(i === msb_index, 0x80.U, 0.U)
-      when (i === msb_index) {
+      val len = Mux(i*7.U + 6.U < maxWidth.U, 7.U, maxWidth.U - 1.U - i*7.U)
+      val lsi = i*7.U
+      val mask = ((1.U << len) - 1.U) << lsi
+      io.out.bits := ((io.in.bits & mask) >> lsi) | Mux(i*7.U >= msb_index, 0x80.U, 0.U)
+      when (i*7.U >= msb_index) {
         state := sIdle
         io.in.ready := true.B
       }
@@ -81,7 +81,7 @@ class TraceHPMSequencer (val params: TraceEncoderParams) extends Module {
   // state machine
   val sDisabled :: sSync:: sIdle :: sSample :: sSequence :: Nil = Enum(5)
   val state = RegInit(sDisabled)
-  val sequence_mask_reg = RegInit(0.U(log2Ceil(CSR.nCtr).W))
+  val sequence_mask_reg = RegInit(0.U(log2Ceil(CSR.nHPM).W))
 
   val slicer = Module(new SerialWidthSlicer(8, 32)) 
   val varlen_encoder = Module(new SerialVarLenEncoder(CSR.hpmWidth))
@@ -132,8 +132,9 @@ class TraceHPMSequencer (val params: TraceEncoderParams) extends Module {
       state := Mux(sequence_mask_reg === 0.U, sIdle, sSequence)
       // next counter to seqeunce
       val next_counter = PriorityEncoder(sequence_mask_reg)
-      varlen_encoder.io.in.valid := true.B
-      varlen_encoder.io.in.bits := hpm_samples(next_counter) - hpm_prev_samples(next_counter)
+      varlen_encoder.io.in.valid := sequence_mask_reg =/= 0.U
+      val delta = hpm_samples(next_counter) - hpm_prev_samples(next_counter)
+      varlen_encoder.io.in.bits := delta
 
       byte_buffer.io.enq.valid := varlen_encoder.io.out.valid
       byte_buffer.io.enq.bits := varlen_encoder.io.out.bits
