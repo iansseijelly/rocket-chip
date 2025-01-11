@@ -28,7 +28,7 @@ import freechips.rocketchip.prci.{ClockSinkParameters, RationalCrossing, ClockCr
 import freechips.rocketchip.util.{
   Annotated, InOrderArbiter, TraceEncoder, 
   TraceEncoderParams, TraceSinkPrint, TraceSinkDMA,
-  TraceEncoderController, TraceSinkArbiter
+  TraceEncoderController, TraceSinkArbiter, TraceHPMSequencer
 }
 import freechips.rocketchip.subsystem._
 
@@ -98,6 +98,10 @@ class RocketTile private(
 
   val trace_sink_print = rocketParams.ltrace.map { t =>
     LazyModule(new TraceSinkPrint(rocketParams.uniqueName))
+  }
+
+  val trace_sink_print_hpm = rocketParams.ltrace.map { t =>
+    LazyModule(new TraceSinkPrint(rocketParams.uniqueName + "_hpm"))
   }
 
   val trace_sink_dma = rocketParams.ltrace.map { t =>
@@ -179,10 +183,15 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   if (outer.rocketParams.ltrace.isDefined) {
     val trace_encoder = Module(new TraceEncoder(outer.rocketParams.ltrace.get))
+    val trace_hpm_sequencer = Module(new TraceHPMSequencer(outer.rocketParams.ltrace.get))
+
     core.io.trace_core_ingress <> trace_encoder.io.in
     outer.trace_encoder_controller.foreach { lm =>
       trace_encoder.io.control <> lm.module.io.control
+      trace_hpm_sequencer.io.control <> lm.module.io.control
     }
+    trace_hpm_sequencer.io.hpmcounters := core.io.hpmcountervals
+    trace_hpm_sequencer.io.time := core.io.trace_core_ingress.time
 
     val trace_sink_arbiter = Module(new TraceSinkArbiter(2))
     trace_sink_arbiter.io.target := trace_encoder.io.control.target
@@ -193,6 +202,12 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     outer.trace_sink_dma.foreach { lm =>
       lm.module.io.in <> trace_sink_arbiter.io.out(1)
     }
+    outer.trace_sink_print_hpm.foreach { lm =>
+      lm.module.io.in <> trace_hpm_sequencer.io.out
+    }
+    core.io.traceStall := outer.traceAuxSinkNode.bundle.stall || trace_encoder.io.stall
+  } else {
+    core.io.traceStall := outer.traceAuxSinkNode.bundle.stall
   }
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
@@ -219,7 +234,6 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   // Pass through various external constants and reports that were bundle-bridged into the tile
   outer.traceSourceNode.bundle <> core.io.trace
-  core.io.traceStall := outer.traceAuxSinkNode.bundle.stall
   outer.bpwatchSourceNode.bundle <> core.io.bpwatch
   core.io.hartid := outer.hartIdSinkNode.bundle
   require(core.io.hartid.getWidth >= outer.hartIdSinkNode.bundle.getWidth,

@@ -16,12 +16,13 @@ trait HasTraceSinkIO {
   })
 }
 
-class TraceSinkPrint(name: String)(implicit p: Parameters) extends LazyModule {
+class TraceSinkPrint(bb_name: String)(implicit p: Parameters) extends LazyModule {
   override lazy val module = new TraceSinkPrintImpl(this)
+  val blackbox_name = bb_name
   class TraceSinkPrintImpl(outer: TraceSinkPrint) extends LazyModuleImp(outer) with HasTraceSinkIO {
     withClockAndReset(clock, reset) {
       io.in.ready := true.B
-      val byte_printer = Module(new BytePrinter(outer.name))
+      val byte_printer = Module(new BytePrinter(outer.blackbox_name))
       byte_printer.io.clk := clock
       byte_printer.io.reset := reset
       byte_printer.io.in_valid := io.in.valid

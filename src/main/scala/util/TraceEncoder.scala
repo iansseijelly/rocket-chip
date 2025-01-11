@@ -7,6 +7,7 @@ import chisel3._
 import chisel3.util._
 import scala.math.min
 
+
 class TraceEncoderParams(
   val coreParams: TraceCoreParams,
   val bufferDepth: Int,
@@ -59,7 +60,7 @@ object HeaderByte {
 // Variable-length encoding helper module
 class VarLenEncoder(val maxWidth: Int) extends Module {
   val maxNumBytes = maxWidth/(8-1) + 1
-  // println(s"maxNumBytes: $maxNumBytes")
+  
   val io = IO(new Bundle {
     val input_value = Input(UInt(maxWidth.W))
     val input_valid = Input(Bool())
@@ -170,7 +171,7 @@ class TracePacketizer(val params: TraceEncoderParams) extends Module {
         io.out.bits := io.byte.bits
         io.out.valid := io.byte.valid
         header_index := header_index + io.out.fire
-      }. elsewhen (trap_addr_num_bytes > 0.U && trap_addr_index < trap_addr_num_bytes) {
+      } .elsewhen (trap_addr_num_bytes > 0.U && trap_addr_index < trap_addr_num_bytes) {
         io.out.bits := io.trap_addr.bits(trap_addr_index)
         io.out.valid := io.trap_addr.valid
         trap_addr_index := trap_addr_index + io.out.fire
@@ -207,13 +208,16 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
 
   val MAX_DELTA_TIME_COMP = 0xCF // 63, 6 bits
 
+  when (io.stall) {
+    printf("TraceEncoder stall detected\n")
+  }
+
   // states
   val sIdle :: sSync :: sData :: Nil = Enum(3)
   val state = RegInit(sIdle)
   val enabled = RegInit(false.B)
   val stall = Wire(Bool())
   val prev_time = Reg(UInt(params.coreParams.xlen.W))
-
   // pipeline of ingress data
   val ingress_0 = RegInit(0.U.asTypeOf(new TraceCoreInterface(params.coreParams)))
   val ingress_1 = RegInit(0.U.asTypeOf(new TraceCoreInterface(params.coreParams)))
@@ -302,9 +306,11 @@ class TraceEncoder(val params: TraceEncoderParams) extends Module {
   } .elsewhen (byte_buffer.io.enq.fire) {
     sent := true.B
   }
+
   trap_addr_encoder.io.input_valid := encode_trap_addr_valid && !is_compressed && packet_valid
   target_addr_encoder.io.input_valid := encode_target_addr_valid && !is_compressed && packet_valid
   time_encoder.io.input_valid := !is_compressed && packet_valid
+
   // default values
   trap_addr_encoder.io.input_value := 0.U
   target_addr_encoder.io.input_value := 0.U

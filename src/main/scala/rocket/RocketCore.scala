@@ -150,6 +150,7 @@ trait HasRocketCoreIO extends HasRocketCoreParameters {
     val traceStall = Input(Bool())
     val vector = if (usingVector) Some(Flipped(new VectorCoreIO)) else None
     val trace_core_ingress = Output(new TraceCoreInterface(ingress_params))
+    val hpmcountervals = Output(Vec(CSR.nHPM, UInt(CSR.hpmWidth.W)))
   })
 }
 
@@ -847,7 +848,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.trace_core_ingress.tval := csr.io.tval
   io.trace_core_ingress.cause := csr.io.cause
   io.trace_core_ingress.time := csr.io.time
-
+  io.hpmcountervals := csr.io.hpmcountervals
+  
   // hook up control/status regfile
   csr.io.ungated_clock := clock
   csr.io.decode(0).inst := id_inst(0)

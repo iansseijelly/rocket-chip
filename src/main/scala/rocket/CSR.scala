@@ -301,6 +301,7 @@ class CSRFileIO(hasBeu: Boolean)(implicit p: Parameters) extends CoreBundle
   val bp = Output(Vec(nBreakpoints, new BP))
   val pmp = Output(Vec(nPMPs, new PMP))
   val counters = Vec(nPerfCounters, new PerfCounterIO)
+  val hpmcountervals = Output(Vec(CSR.nHPM, UInt(CSR.hpmWidth.W)))
   val csrw_counter = Output(UInt(CSR.nCtr.W))
   val inhibit_cycle = Output(Bool())
   val inst = Input(Vec(retireWidth, UInt(iLen.W)))
@@ -599,7 +600,8 @@ class CSRFile(
     (io.counters zip reg_hpmevent) foreach { case (c, e) => c.eventSel := e }
   val reg_hpmcounter = io.counters.zipWithIndex.map { case (c, i) =>
     WideCounter(CSR.hpmWidth, c.inc, reset = false, inhibit = reg_mcountinhibit(CSR.firstHPM+i)) }
-
+  io.hpmcountervals.zipWithIndex.foreach { case (c, i) => c := reg_hpmcounter(i).value }
+  
   val mip = WireDefault(reg_mip)
   mip.lip := (io.interrupts.lip: Seq[Bool])
   mip.mtip := io.interrupts.mtip
