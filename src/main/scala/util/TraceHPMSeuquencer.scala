@@ -48,7 +48,7 @@ class SerialVarLenEncoder(val maxWidth: Int) extends Module {
 
   switch (state) {
     is (sIdle) {
-      state := Mux(io.in.fire, sBusy, sIdle)
+      state := Mux(io.in.valid, sBusy, sIdle)
       i := 0.U
       msb_index := (maxWidth - 1).U - PriorityEncoder(Reverse(io.in.bits))
     }
@@ -75,6 +75,7 @@ class TraceHPMSequencer (val params: TraceEncoderParams) extends Module {
   })
 
   val hpm_samples = RegInit(VecInit(Seq.fill(CSR.nHPM)(0.U(CSR.hpmWidth.W))))
+  val hpm_prev_samples = RegInit(VecInit(Seq.fill(CSR.nHPM)(0.U(CSR.hpmWidth.W))))
   val prev_time = Reg(UInt(params.coreParams.xlen.W))
 
   // state machine
@@ -116,19 +117,23 @@ class TraceHPMSequencer (val params: TraceEncoderParams) extends Module {
     }
     is (sIdle) {
       state := Mux(~io.control.enable, sDisabled,
-        Mux(prev_time + io.control.hpmcounter_report_interval > io.time, sSample, sIdle)) // time to sample
+        Mux(io.time > prev_time + io.control.hpmcounter_report_interval, sSample, sIdle)) // time to sample
     }
     is (sSample) {
       state := sSequence
-      hpm_samples := io.hpmcounters
+      hpm_samples.foreach(i => 
+        hpm_samples(i) := Mux(io.control.hpmcounter_enable(i+CSR.firstHPM.U), 
+        io.hpmcounters(i), hpm_samples(i))) // take the delta
+      hpm_prev_samples := hpm_samples
       sequence_mask_reg := io.control.hpmcounter_enable >> CSR.firstHPM.U
+      prev_time := io.time
     }
     is (sSequence) {
       state := Mux(sequence_mask_reg === 0.U, sIdle, sSequence)
       // next counter to seqeunce
       val next_counter = PriorityEncoder(sequence_mask_reg)
       varlen_encoder.io.in.valid := true.B
-      varlen_encoder.io.in.bits := hpm_samples(next_counter)
+      varlen_encoder.io.in.bits := hpm_samples(next_counter) - hpm_prev_samples(next_counter)
 
       byte_buffer.io.enq.valid := varlen_encoder.io.out.valid
       byte_buffer.io.enq.bits := varlen_encoder.io.out.bits
