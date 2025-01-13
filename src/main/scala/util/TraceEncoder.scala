@@ -188,9 +188,10 @@ class TracePacketizer(val params: TraceEncoderParams) extends Module {
         io.out.valid := false.B
         // release buffers
         io.byte.ready := true.B
-        io.target_addr.ready := true.B
-        io.trap_addr.ready := true.B
-        io.time.ready := true.B
+        // if we ever have a packet, we need to be ready to accept it
+        io.target_addr.ready := target_addr_num_bytes =/= 0.U
+        io.trap_addr.ready := trap_addr_num_bytes =/= 0.U
+        io.time.ready := time_num_bytes =/= 0.U
         io.metadata.ready := true.B
         prep_next_state()
       }
