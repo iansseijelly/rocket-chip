@@ -107,6 +107,17 @@ class RocketTile private(
     case None => (Nil, Nil)
   }
 
+  val trace_hpm_encoder = rocketParams.traceParams match {
+    case Some(t) => Some(t.buildHPMEncoder(p))
+    case None => None
+  }
+
+  // reuse buildSinks for hpm sinks
+  val (trace_hpm_sinks, trace_hpm_sink_ids) = rocketParams.traceParams match {
+    case Some(t) => t.buildSinks.map {_(p)}.unzip
+    case None => (Nil, Nil)
+  }
+
   val tile_master_blocker =
     tileParams.blockerCtrlAddr
       .map(BasicBusBlockerParams(_, xBytes, masterPortBeatBytes, deadlock = true))
@@ -178,25 +189,43 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   core.io.reset_vector := DontCare
 
   if (outer.rocketParams.traceParams.isDefined) {
+
+    // connect core trace ingress to trace encoder
     core.io.trace_core_ingress.get <> outer.trace_encoder.get.module.io.in
+    // connect core hpm ingress to hpm encoder
+    core.io.hpmcountervals <> outer.trace_hpm_encoder.get.module.io.hpmcounters
+    core.io.trace_core_ingress.get.time <> outer.trace_hpm_encoder.get.module.io.time
+
+    // connect trace encoder controller to trace encoder
     outer.trace_encoder_controller.foreach { lm =>
       outer.trace_encoder.get.module.io.control <> lm.module.io.control
+      outer.trace_hpm_encoder.get.module.io.control <> lm.module.io.control
     }
 
+    // arbiter for trace sinks
     val trace_sink_arbiter = Module(new TraceSinkArbiter(outer.traceSinkIds, 
       use_monitor = outer.rocketParams.traceParams.get.useArbiterMonitor, 
-      monitor_name = outer.rocketParams.uniqueName))
-
+      monitor_name = outer.rocketParams.uniqueName + "_trace"))
     trace_sink_arbiter.io.target := outer.trace_encoder.get.module.io.control.target
     trace_sink_arbiter.io.in <> outer.trace_encoder.get.module.io.out 
-
-
-    core.io.traceStall := outer.traceAuxSinkNode.bundle.stall || outer.trace_encoder.get.module.io.stall
-
     outer.trace_sinks.zip(outer.traceSinkIds).foreach { case (sink, id) =>
       val index = outer.traceSinkIds.indexOf(id)
       sink.module.io.trace_in <> trace_sink_arbiter.io.out(index)
     }
+
+    // arbiter for hpm sinks
+    val trace_hpm_sink_arbiter = Module(new TraceSinkArbiter(outer.trace_hpm_sink_ids, 
+      use_monitor = outer.rocketParams.traceParams.get.useArbiterMonitor, 
+      monitor_name = outer.rocketParams.uniqueName + "_hpm"))
+    trace_hpm_sink_arbiter.io.target := outer.trace_hpm_encoder.get.module.io.control.hpm_target
+    trace_hpm_sink_arbiter.io.in <> outer.trace_hpm_encoder.get.module.io.out 
+    outer.trace_hpm_sinks.zip(outer.trace_hpm_sink_ids).foreach { case (sink, id) =>
+      val index = outer.trace_hpm_sink_ids.indexOf(id)
+      sink.module.io.trace_in <> trace_hpm_sink_arbiter.io.out(index)
+    }
+
+    // stalling signal for trace encoder
+    core.io.traceStall := outer.traceAuxSinkNode.bundle.stall || outer.trace_encoder.get.module.io.stall
   } else {
     core.io.traceStall := outer.traceAuxSinkNode.bundle.stall
   }
