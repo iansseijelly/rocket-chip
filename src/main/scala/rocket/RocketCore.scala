@@ -58,7 +58,8 @@ case class RocketCoreParams(
   haveCease: Boolean = true, // non-standard CEASE instruction
   haveSimTimeout: Boolean = true, // add plusarg for simulation timeout
   vector: Option[RocketCoreVectorParams] = None,
-  enableTraceCoreIngress: Boolean = false
+  enableTraceCoreIngress: Boolean = false,
+  useTracking: Boolean = true // TODO: remove this
 ) extends CoreParams {
   val lgPauseCycles = 5
   val haveFSDirty = false
@@ -310,6 +311,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val take_pc_wb = Wire(Bool())
   val wb_reg_wphit           = Reg(Vec(nBreakpoints, Bool()))
 
+  val ex_reg_tracking = if (rocketParams.useTracking) Some(Reg(Vec(TrackingParams.nEvents, Bool()))) else None
+  val mem_reg_tracking = if (rocketParams.useTracking) Some(Reg(Vec(TrackingParams.nEvents, Bool()))) else None
+  val wb_reg_tracking = if (rocketParams.useTracking) Some(Reg(Vec(TrackingParams.nEvents, Bool()))) else None
+
   val take_pc_mem_wb = take_pc_wb || take_pc_mem
   val take_pc = take_pc_mem_wb
 
@@ -317,6 +322,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ibuf = Module(new IBuf)
   val id_expanded_inst = ibuf.io.inst.map(_.bits.inst)
   val id_raw_inst = ibuf.io.inst.map(_.bits.raw)
+  val id_tracking_icache_miss = ibuf.io.inst.map(_.bits.tracking_icache_miss)
+  val id_tracking_tlb_miss = ibuf.io.inst.map(_.bits.tracking_tlb_miss)
+  dontTouch(id_tracking_icache_miss(0))
+  dontTouch(id_tracking_tlb_miss(0))
   val id_inst = id_expanded_inst.map(_.bits)
   ibuf.io.imem <> io.imem.resp
   ibuf.io.kill := take_pc
@@ -596,6 +605,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ex_reg_btb_resp := ibuf.io.btb_resp
     ex_reg_wphit := bpu.io.bpwatch.map { bpw => bpw.ivalid(0) }
     ex_reg_set_vconfig := id_set_vconfig && !id_xcpt
+    if (rocketParams.useTracking) {
+      ex_reg_tracking.get(TrackingParams.eventIFL1) := id_tracking_icache_miss(0)
+      ex_reg_tracking.get(TrackingParams.eventIFTLB) := id_tracking_tlb_miss(0)
+    }
   }
 
   // replay inst in ex stage?
@@ -658,6 +671,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
     mem_reg_cause := ex_cause
     mem_reg_inst := ex_reg_inst
+    if (rocketParams.useTracking) { mem_reg_tracking.get := ex_reg_tracking.get }
     mem_reg_raw_inst := ex_reg_raw_inst
     mem_reg_mem_size := ex_reg_mem_size
     mem_reg_hls_or_dv := io.dmem.req.bits.dv
@@ -722,6 +736,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     }
     wb_reg_cause := mem_cause
     wb_reg_inst := mem_reg_inst
+    if (rocketParams.useTracking) { wb_reg_tracking.get := mem_reg_tracking.get }
     wb_reg_raw_inst := mem_reg_raw_inst
     wb_reg_mem_size := mem_reg_mem_size
     wb_reg_hls_or_dv := mem_reg_hls_or_dv
@@ -1261,7 +1276,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
   else {
     when (csr.io.trace(0).valid) {
-      printf("C%d: %d [%d] pc=[%x] W[r%d=%x][%d] R[r%d=%x] R[r%d=%x] inst=[%x] DASM(%x)\n",
+      printf("C%d: %d [%d] pc=[%x] W[r%d=%x][%d] R[r%d=%x] R[r%d=%x] inst=[%x] stall=[%b] DASM(%x)\n",
          io.hartid, coreMonitorBundle.timer, coreMonitorBundle.valid,
          coreMonitorBundle.pc,
          Mux(wb_ctrl.wxd || wb_ctrl.wfd, coreMonitorBundle.wrdst, 0.U),
@@ -1271,7 +1286,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
          Mux(wb_ctrl.rxs1 || wb_ctrl.rfs1, coreMonitorBundle.rd0val, 0.U),
          Mux(wb_ctrl.rxs2 || wb_ctrl.rfs2, coreMonitorBundle.rd1src, 0.U),
          Mux(wb_ctrl.rxs2 || wb_ctrl.rfs2, coreMonitorBundle.rd1val, 0.U),
-         coreMonitorBundle.inst, coreMonitorBundle.inst)
+         coreMonitorBundle.inst, Cat(wb_reg_tracking.get), coreMonitorBundle.inst)
     }
   }
 

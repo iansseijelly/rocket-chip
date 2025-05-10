@@ -15,6 +15,8 @@ class Instruction(implicit val p: Parameters) extends ParameterizedBundle with H
   val rvc = Bool()
   val inst = new ExpandedInstruction
   val raw = UInt(32.W)
+  val tracking_icache_miss = Bool()
+  val tracking_tlb_miss = Bool()
   require(coreInstBits == (if (usingCompressed) 16 else 32))
 }
 
@@ -76,6 +78,8 @@ class IBuf(implicit p: Parameters) extends CoreModule {
   val xcpt = (0 until bufMask.getWidth).map(i => Mux(bufMask(i), buf.xcpt, io.imem.bits.xcpt))
   val buf_replay = Mux(buf.replay, bufMask, 0.U)
   val ic_replay = buf_replay | Mux(io.imem.bits.replay, valid & ~bufMask, 0.U)
+  val tracking_icache_miss = buf.tracking_icache_miss
+  val tracking_tlb_miss = buf.tracking_tlb_miss
   assert(!io.imem.valid || !io.imem.bits.btb.taken || io.imem.bits.btb.bridx >= pcWordBits)
 
   io.btb_resp := io.imem.bits.btb
@@ -96,6 +100,8 @@ class IBuf(implicit p: Parameters) extends CoreModule {
       io.inst(i).bits.xcpt1 := Mux(exp.io.rvc, 0.U, xcpt(j+1.U).asUInt).asTypeOf(new FrontendExceptions)
       io.inst(i).bits.replay := replay
       io.inst(i).bits.rvc := exp.io.rvc
+      io.inst(i).bits.tracking_icache_miss := io.imem.bits.tracking_icache_miss
+      io.inst(i).bits.tracking_tlb_miss := io.imem.bits.tracking_tlb_miss
 
       when ((bufMask(j) && exp.io.rvc) || bufMask(j+1.U)) { io.btb_resp := ibufBTBResp }
 
@@ -109,6 +115,8 @@ class IBuf(implicit p: Parameters) extends CoreModule {
       io.inst(i).bits.xcpt1 := 0.U.asTypeOf(new FrontendExceptions)
       io.inst(i).bits.replay := ic_replay(i)
       io.inst(i).bits.rvc := false.B
+      io.inst(i).bits.tracking_icache_miss := io.imem.bits.tracking_icache_miss
+      io.inst(i).bits.tracking_tlb_miss := io.imem.bits.tracking_tlb_miss
 
       expand(i+1, null, curInst >> 32)
     }

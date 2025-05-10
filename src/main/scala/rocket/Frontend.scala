@@ -41,6 +41,8 @@ class FrontendResp(implicit p: Parameters) extends CoreBundle()(p) {
   val mask = Bits(fetchWidth.W)
   val xcpt = new FrontendExceptions
   val replay = Bool()
+  val tracking_icache_miss = Bool()
+  val tracking_tlb_miss = Bool()
 }
 
 class FrontendPerfEvents extends Bundle {
@@ -123,6 +125,8 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   val s2_speculative = RegInit(false.B)
   val s2_partial_insn_valid = RegInit(false.B)
   val s2_partial_insn = Reg(UInt(coreInstBits.W))
+  val s2_icache_missed = RegInit(false.B)
+  val s2_tlb_missed = RegInit(false.B)
   val wrong_path = RegInit(false.B)
 
   val s1_base_pc = ~(~s1_pc | (fetchBytes - 1).U)
@@ -149,6 +153,17 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
     s2_pc := s1_pc
     s2_speculative := s1_speculative
     s2_tlb_resp := tlb.io.resp
+  }
+
+  when(icache.io.perf.acquire) {
+    s2_icache_missed := true.B
+  } .elsewhen(fq.io.enq.fire) {
+    s2_icache_missed := false.B
+  }
+  when(io.ptw.req.fire) {
+    s2_tlb_missed := true.B
+  } .elsewhen(fq.io.enq.fire) {
+    s2_tlb_missed := false.B
   }
 
   val recent_progress_counter_init = 3.U
@@ -191,6 +206,8 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   fq.io.enq.bits.btb := s2_btb_resp_bits
   fq.io.enq.bits.btb.taken := s2_btb_taken
   fq.io.enq.bits.xcpt := s2_tlb_resp
+  fq.io.enq.bits.tracking_icache_miss := s2_icache_missed || icache.io.perf.acquire
+  fq.io.enq.bits.tracking_tlb_miss := s2_tlb_missed || io.ptw.req.fire
   assert(!(s2_speculative && io.ptw.customCSRs.asInstanceOf[RocketCustomCSRs].disableSpeculativeICacheRefill && !icache.io.s2_kill))
   when (icache.io.resp.valid && icache.io.resp.bits.ae) { fq.io.enq.bits.xcpt.ae.inst := true.B }
 
