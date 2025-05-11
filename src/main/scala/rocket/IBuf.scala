@@ -97,7 +97,7 @@ class IBuf(implicit p: Parameters) extends CoreModule {
       io.inst(i).bits.xcpt1 := Mux(exp.io.rvc, 0.U, xcpt(j+1.U).asUInt).asTypeOf(new FrontendExceptions)
       io.inst(i).bits.replay := replay
       io.inst(i).bits.rvc := exp.io.rvc
-      io.inst(i).bits.tracking := Mux(nBufValid > 0.U, buf.tracking, io.imem.bits.tracking)
+      io.inst(i).bits.tracking := Mux(nBufValid > 0.U, VecInit(Seq.fill(TrackingParams.nEvents)(false.B)), io.imem.bits.tracking)
 
       when ((bufMask(j) && exp.io.rvc) || bufMask(j+1.U)) { io.btb_resp := ibufBTBResp }
 
@@ -111,7 +111,7 @@ class IBuf(implicit p: Parameters) extends CoreModule {
       io.inst(i).bits.xcpt1 := 0.U.asTypeOf(new FrontendExceptions)
       io.inst(i).bits.replay := ic_replay(i)
       io.inst(i).bits.rvc := false.B
-      io.inst(i).bits.tracking := Mux(nBufValid > 0.U, buf.tracking, io.imem.bits.tracking)
+      io.inst(i).bits.tracking := Mux(nBufValid > 0.U, VecInit(Seq.fill(TrackingParams.nEvents)(false.B)), io.imem.bits.tracking)
 
       expand(i+1, null, curInst >> 32)
     }
