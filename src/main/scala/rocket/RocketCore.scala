@@ -322,10 +322,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val ibuf = Module(new IBuf)
   val id_expanded_inst = ibuf.io.inst.map(_.bits.inst)
   val id_raw_inst = ibuf.io.inst.map(_.bits.raw)
-  val id_tracking_icache_miss = ibuf.io.inst.map(_.bits.tracking_icache_miss)
-  val id_tracking_tlb_miss = ibuf.io.inst.map(_.bits.tracking_tlb_miss)
-  dontTouch(id_tracking_icache_miss(0))
-  dontTouch(id_tracking_tlb_miss(0))
+  val id_tracking = ibuf.io.inst.map(_.bits.tracking)
   val id_inst = id_expanded_inst.map(_.bits)
   ibuf.io.imem <> io.imem.resp
   ibuf.io.kill := take_pc
@@ -606,8 +603,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     ex_reg_wphit := bpu.io.bpwatch.map { bpw => bpw.ivalid(0) }
     ex_reg_set_vconfig := id_set_vconfig && !id_xcpt
     if (rocketParams.useTracking) {
-      ex_reg_tracking.get(TrackingParams.eventIFL1) := id_tracking_icache_miss(0)
-      ex_reg_tracking.get(TrackingParams.eventIFTLB) := id_tracking_tlb_miss(0)
+      ex_reg_tracking.get := id_tracking(0)
     }
   }
 
@@ -1095,6 +1091,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     Mux(wb_xcpt || csr.io.eret, csr.io.evec, // exception or [m|s]ret
     Mux(replay_wb,              wb_reg_pc,   // replay
                                 mem_npc))    // flush or branch misprediction
+  if (rocketParams.useTracking) {
+    io.imem.req.bits.tracking := Mux(replay_wb, wb_reg_tracking.get, VecInit(Seq.fill(TrackingParams.nEvents)(false.B)))
+  }
   io.imem.flush_icache := wb_reg_valid && wb_ctrl.fence_i && !io.dmem.s2_nack
   io.imem.might_request := {
     imem_might_request_reg := ex_pc_valid || mem_pc_valid || io.ptw.customCSRs.disableICacheClockGate || io.vector.map(_.trap_check_busy).getOrElse(false.B)

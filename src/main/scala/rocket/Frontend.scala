@@ -20,6 +20,7 @@ import freechips.rocketchip.util.UIntToAugmentedUInt
 class FrontendReq(implicit p: Parameters) extends CoreBundle()(p) {
   val pc = UInt(vaddrBitsExtended.W)
   val speculative = Bool()
+  val tracking = Vec(TrackingParams.nEvents, Bool())
 }
 
 class FrontendExceptions extends Bundle {
@@ -41,8 +42,7 @@ class FrontendResp(implicit p: Parameters) extends CoreBundle()(p) {
   val mask = Bits(fetchWidth.W)
   val xcpt = new FrontendExceptions
   val replay = Bool()
-  val tracking_icache_miss = Bool()
-  val tracking_tlb_miss = Bool()
+  val tracking = Vec(TrackingParams.nEvents, Bool())
 }
 
 class FrontendPerfEvents extends Bundle {
@@ -113,6 +113,7 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
     (!fq.io.mask(fq.io.mask.getWidth-2) && (!s1_valid || !s2_valid)) ||
     (!fq.io.mask(fq.io.mask.getWidth-1) && (!s1_valid && !s2_valid))
   val s0_valid = io.cpu.req.valid || s0_fq_has_space
+  val s0_tracking = Mux(io.cpu.req.valid, io.cpu.req.bits.tracking, VecInit(Seq.fill(TrackingParams.nEvents)(false.B)))
   s1_valid := s0_valid
   val s1_pc = Reg(UInt(vaddrBitsExtended.W))
   val s1_speculative = Reg(Bool())
@@ -125,6 +126,8 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   val s2_speculative = RegInit(false.B)
   val s2_partial_insn_valid = RegInit(false.B)
   val s2_partial_insn = Reg(UInt(coreInstBits.W))
+  val s1_tracking = Reg(Vec(TrackingParams.nEvents, Bool()))
+  val s2_tracking = Reg(Vec(TrackingParams.nEvents, Bool()))
   val s2_icache_missed = RegInit(false.B)
   val s2_tlb_missed = RegInit(false.B)
   val wrong_path = RegInit(false.B)
@@ -137,6 +140,8 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   val s2_replay = Wire(Bool())
   s2_replay := (s2_valid && !fq.io.enq.fire) || RegNext(s2_replay && !s0_valid, true.B)
   val npc = Mux(s2_replay, s2_pc, predicted_npc)
+  val ntracking = Mux(s2_replay, s2_tracking, s0_tracking)
+  s1_tracking := ntracking
 
   s1_pc := io.cpu.npc
   // consider RVC fetches across blocks to be non-speculative if the first
@@ -153,6 +158,7 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
     s2_pc := s1_pc
     s2_speculative := s1_speculative
     s2_tlb_resp := tlb.io.resp
+    s2_tracking := s1_tracking
   }
 
   when(icache.io.perf.acquire) {
@@ -206,8 +212,9 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   fq.io.enq.bits.btb := s2_btb_resp_bits
   fq.io.enq.bits.btb.taken := s2_btb_taken
   fq.io.enq.bits.xcpt := s2_tlb_resp
-  fq.io.enq.bits.tracking_icache_miss := s2_icache_missed || icache.io.perf.acquire
-  fq.io.enq.bits.tracking_tlb_miss := s2_tlb_missed || io.ptw.req.fire
+  fq.io.enq.bits.tracking := VecInit(Seq.fill(TrackingParams.nEvents)(false.B))
+  fq.io.enq.bits.tracking(TrackingParams.eventIFL1) := s2_icache_missed || icache.io.perf.acquire || s2_tracking(TrackingParams.eventIFL1)
+  fq.io.enq.bits.tracking(TrackingParams.eventIFTLB) := s2_tlb_missed || io.ptw.req.fire || s2_tracking(TrackingParams.eventIFTLB)
   assert(!(s2_speculative && io.ptw.customCSRs.asInstanceOf[RocketCustomCSRs].disableSpeculativeICacheRefill && !icache.io.s2_kill))
   when (icache.io.resp.valid && icache.io.resp.bits.ae) { fq.io.enq.bits.xcpt.ae.inst := true.B }
 
