@@ -20,10 +20,23 @@ class TraceEncoderControlInterface() extends Bundle {
   val enable = Bool()
   val target = UInt(TraceSinkTarget.width.W)
   val bp_mode = UInt(32.W)
+  // Lossy mode: on queue pressure the encoder emits Sync Pause, drops whole
+  // retire groups, and emits Sync Resume once the queues drain, instead of
+  // asserting stall to the core. Its own register so it is never written
+  // together with enable.
+  val lossy = Bool()
 }
 
 class TraceEncoderPerformanceInterface() extends Bundle {
-  val stall = Bool()
+  // packet queues are at the high watermark this cycle. Lossless mode: the
+  // core is being stalled. Lossy mode: the core would have been stalled.
+  val full = Bool()
+  // inside a Pause..Resume gap this cycle
+  val paused = Bool()
+  // a Pause packet was enqueued this cycle
+  val pause_fire = Bool()
+  // packets discarded this cycle (whole retire groups; up to nGroups)
+  val dropped_inc = UInt(8.W)
 }
 
 class TraceEncoderController(addr: BigInt, beatBytes: Int, hartId: Int)(implicit p: Parameters) extends LazyModule {
@@ -51,8 +64,8 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int, hartId: Int)(implicit
 
     val control_reg_write_valid = Wire(Bool())
     val control_reg_bits = RegInit(1.U(2.W))
-    val enable = control_reg_bits(1)
-    val active = control_reg_bits(0)
+    val enable = control_reg_bits(1) // 2 means enable, 0 means disable
+    val active = control_reg_bits(0) // 1 means active, 0 means inactive
     io.control.enable := enable
 
     val trace_encoder_impl = RegInit(0.U(32.W))
@@ -62,6 +75,9 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int, hartId: Int)(implicit
 
     val trace_bp_mode = RegInit(0.U(32.W))
     io.control.bp_mode := trace_bp_mode
+
+    val trace_lossy = RegInit(0.U(32.W))
+    io.control.lossy := trace_lossy(0)
 
     def traceEncoderControlRegWrite(valid: Bool, bits: UInt): Bool = {
       control_reg_write_valid := valid
@@ -75,9 +91,19 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int, hartId: Int)(implicit
       (true.B, control_reg_bits)
     }
 
-    val stall = RegInit(0.U(64.W))
-    when (io.perf.stall) {
-      stall := stall + 1.U
+    val full = RegInit(0.U(64.W))
+    when (io.perf.full) {
+      full := full + 1.U
+    }
+    val gap_cycles = RegInit(0.U(64.W))
+    when (io.perf.paused) {
+      gap_cycles := gap_cycles + 1.U
+    }
+    val dropped_packets = RegInit(0.U(64.W))
+    dropped_packets := dropped_packets + io.perf.dropped_inc
+    val pause_count = RegInit(0.U(64.W))
+    when (io.perf.pause_fire) {
+      pause_count := pause_count + 1.U
     }
 
     val regmap = node.regmap(
@@ -99,8 +125,24 @@ class TraceEncoderController(addr: BigInt, beatBytes: Int, hartId: Int)(implicit
             RegFieldDesc("bp_mode", "Trace branch predictor mode"))
         ),
         0x28 -> Seq(
-          RegField.r(64, stall,
-            RegFieldDesc("stall", "Trace encoder stall"))
+          RegField.r(64, full,
+            RegFieldDesc("full", "Cycles the packet queues were at the high watermark (lossless: core stalled; lossy: core would have stalled)"))
+        ),
+        0x30 -> Seq(
+          RegField(32, trace_lossy,
+            RegFieldDesc("lossy", "Lossy mode (bit 0): pause/resume instead of stalling the core"))
+        ),
+        0x38 -> Seq(
+          RegField.r(64, gap_cycles,
+            RegFieldDesc("gapCycles", "Cycles spent inside Pause..Resume gaps"))
+        ),
+        0x40 -> Seq(
+          RegField.r(64, dropped_packets,
+            RegFieldDesc("droppedPackets", "Packets discarded in lossy mode"))
+        ),
+        0x48 -> Seq(
+          RegField.r(64, pause_count,
+            RegFieldDesc("pauseCount", "Number of Pause packets emitted"))
         )
       ):_*
     )

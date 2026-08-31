@@ -27,7 +27,10 @@ class LazyTraceEncoderModule(outer: LazyTraceEncoder) extends LazyModuleImp(oute
   val io = IO(new Bundle {
     val control = Input(new TraceEncoderControlInterface())
     val in = Input(new TraceCoreInterface(outer.coreParams))
+    // backpressure to the core; encoders deassert this in lossy mode
     val stall = Output(Bool())
+    // counters for the controller (stall is reported here regardless of lossy)
+    val perf = Output(new TraceEncoderPerformanceInterface())
     val out = new TraceEgressInterface()
   })
 }
